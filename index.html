@@ -184,14 +184,13 @@
 
 
 <script>
-    // --- Configuración Inicial ---
+        // --- Configuración Inicial ---
     const canvas = document.getElementById('ecgCanvas');
     const ctx = canvas.getContext('2d');
     const hrValueDisplay = document.getElementById('hr-value');
     const rhythmLabelDisplay = document.getElementById('rhythm-label');
     const buttons = document.querySelectorAll('.cyber-button');
 
-    // Ajustamos el canvas al tamaño real de su contenedor CSS
     function resizeCanvas() {
         canvas.width = canvas.parentElement.clientWidth;
         canvas.height = canvas.parentElement.clientHeight;
@@ -200,122 +199,116 @@
     window.addEventListener('resize', resizeCanvas);
     
     // --- Variables del Simulador ---
-    let x = 0; // Posición horizontal del cursor de dibujo
+    let x = 0; 
     let baseline = canvas.height / 2;
-    let time = 0; // Tiempo global
+    let time = 0; 
     
-    // Estado actual del simulador
     let currentState = {
-        rhythm: 'sinus', // 'sinus', 'tachy', 'vfib', 'asystole'
-        speed: 3,        // Velocidad de barrido horizontal
-        amplitude: 120,  // Altura de las ondas
-        targetBPM: 72,   // BPM objetivo para mostrar en pantalla
-        currentBPM: 72   // BPM actual (para transiciones suaves)
+        rhythm: 'sinus', 
+        speed: 2, // Velocidad un poco más lenta para mejor lectura (25mm/s simulado)
+        amplitude: 100,  
+        targetBPM: 72,   
+        currentBPM: 72   
     };
 
-
-    // --- MOTOR DE MATEMÁTICAS DE ONDA ---
-
-    // Función 1: Ritmo Sinusal Normal (Complejo PQRST)
+    // --- FUNCIONES MATEMÁTICAS (Igual que antes) ---
     function waveSinus(t) {
-        // Ajustamos el ciclo para que coincida aprox con los BPM
-        let cycleLen = 60 * 60 / currentState.targetBPM; // frames por latido
+        let cycleLen = 60 * 60 / currentState.targetBPM; 
         let cycle = t % cycleLen;
-        
-        // Escalamos el ciclo a un rango 0-100 para facilitar la matemática
         let pos = (cycle / cycleLen) * 100; 
-
         let val = 0;
-        // Onda P
-        if(pos > 10 && pos < 20) val -= Math.sin((pos-10)/10 * Math.PI) * 0.1;
-        // Segmento PR (plano)
-        // Complejo QRS
+        if(pos > 10 && pos < 20) val -= Math.sin((pos-10)/10 * Math.PI) * 0.1; // P
         else if(pos > 30 && pos < 32) val += 0.1; // Q
-        else if(pos >= 32 && pos < 36) val -= 1.2; // R (Pico alto)
+        else if(pos >= 32 && pos < 36) val -= 1.2; // R
         else if(pos >= 36 && pos < 40) val += 0.2; // S
-        // Segmento ST (plano)
-        // Onda T
-        else if(pos > 50 && pos < 75) val -= Math.sin((pos-50)/25 * Math.PI) * 0.25;
-
-        // Ruido basal ligero
+        else if(pos > 50 && pos < 75) val -= Math.sin((pos-50)/25 * Math.PI) * 0.25; // T
         val += (Math.random() - 0.5) * 0.03;
         return val * currentState.amplitude;
     }
 
-    // Función 2: Fibrilación Ventricular (Caos)
     function waveVFib(t) {
-        // Suma de varias ondas sinusoidales de diferente frecuencia y amplitud
-        let val = Math.sin(t * 0.1) * 0.3 + 
-                  Math.sin(t * 0.23) * 0.2 + 
-                  Math.sin(t * 0.37) * 0.4;
-        // Ruido fuerte
+        let val = Math.sin(t * 0.1) * 0.3 + Math.sin(t * 0.23) * 0.2 + Math.sin(t * 0.37) * 0.4;
         val += (Math.random() - 0.5) * 0.2;
-        return val * currentState.amplitude * 0.7; // Amplitud general un poco más baja
+        return val * currentState.amplitude * 0.7; 
     }
 
-    // Función 3: Asistolia (Línea casi plana)
     function waveAsystole(t) {
-        // Solo ruido basal muy ligero
-        let val = (Math.random() - 0.5) * 0.05;
-        return val * currentState.amplitude;
+        return (Math.random() - 0.5) * 0.05 * currentState.amplitude;
     }
 
-    // Selector de función de onda
     function getWaveValue(t) {
         switch(currentState.rhythm) {
             case 'sinus': return waveSinus(t);
-            case 'tachy': return waveSinus(t); // Usa la misma forma pero más rápido
+            case 'tachy': return waveSinus(t); 
             case 'vfib':  return waveVFib(t);
             case 'asystole': return waveAsystole(t);
             default: return waveSinus(t);
         }
     }
 
-    // --- BUCLE PRINCIPAL DE DIBUJO (Render Loop) ---
+    // --- NUEVO BUCLE DE DIBUJO (Lógica Clínica Real) ---
     function draw() {
-        // 1. EFECTO "TRAIL" (Rastro de fósforo)
-        // En lugar de borrar con clearRect, dibujamos un rectángulo negro semitransparente sobre todo.
-        // Esto hace que lo dibujado anteriormente se desvanezca lentamente.
-        ctx.fillStyle = 'rgba(5, 8, 10, 0.15)'; // El último valor (alpha) controla la longitud del rastro. Menor = rastro más largo.
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-        // 2. CONFIGURACIÓN DE LA LÍNEA (Estilo Neon)
+        
+        // 1. CONFIGURACIÓN DE ESTILO
         ctx.lineWidth = 3;
         ctx.lineCap = 'round';
-        // Color base
+        ctx.lineJoin = 'round';
+        
         let drawColor = getComputedStyle(document.documentElement).getPropertyValue('--ecg-color').trim();
-        // Si es una patología grave, cambiamos a rojo
         if(currentState.rhythm === 'vfib' || currentState.rhythm === 'asystole') {
              drawColor = getComputedStyle(document.documentElement).getPropertyValue('--alert-color').trim();
         }
+        
         ctx.strokeStyle = drawColor;
-        // Efecto Glow (Resplandor) importante para el look futurista
-        ctx.shadowBlur = 15; 
+        ctx.shadowBlur = 10; 
         ctx.shadowColor = drawColor;
+
+        // 2. EL "BORRADOR" (Scan Bar)
+        // En lugar de borrar todo, borramos un rectángulo pequeño ADELANTE del punto actual.
+        // Esto elimina el trazo de la vuelta anterior justo antes de reescribirlo.
+        // Al usar clearRect, dejamos ver la rejilla CSS de fondo.
+        
+        const eraserWidth = 30; // Ancho del espacio vacío que viaja delante de la onda
+        const eraserHeight = canvas.height;
+        
+        // Borramos una franja vertical
+        ctx.clearRect(x, 0, eraserWidth, eraserHeight);
 
         // 3. DIBUJAR EL SEGMENTO
         ctx.beginPath();
-        // Empezamos donde terminó el frame anterior
-        ctx.moveTo(x, baseline + getWaveValue(time));
         
-        // Avanzamos tiempo y posición
+        // Punto anterior (si es el inicio de pantalla, movemos sin dibujar para evitar líneas cruzadas)
+        let prevY = baseline + getWaveValue(time);
+        if (x === 0) {
+            ctx.moveTo(x, prevY);
+        } else {
+            // Necesitamos recordar la Y anterior para que la línea sea continua
+            // Retrocedemos un paso en el tiempo para saber dónde estábamos
+            ctx.moveTo(x - currentState.speed, baseline + getWaveValue(time - 1)); 
+        }
+        
+        // Punto actual
+        let nextY = baseline + getWaveValue(time);
+        ctx.lineTo(x, nextY);
+        ctx.stroke();
+        
+        // Dibujar la "cabeza" brillante (punto blanco en la punta, opcional pero queda bien)
+        // Esto ayuda al ojo a seguir el punto de escritura
+        ctx.fillStyle = '#fff';
+        ctx.shadowBlur = 15;
+        ctx.shadowColor = '#fff';
+        ctx.fillRect(x, nextY - 2, 4, 4); // Pequeño punto brillante
+
+        // 4. AVANZAR
         x += currentState.speed;
         time++;
-        
-        // Dibujamos hasta la nueva posición
-        ctx.lineTo(x, baseline + getWaveValue(time));
-        ctx.stroke();
 
-        // 4. BARRIDO (Volver al inicio al llegar al final)
+        // 5. BARRIDO (Wrap around)
         if (x > canvas.width) {
             x = 0;
-            // Un pequeño "flash" verde vertical para simular el refresco del monitor
-            ctx.fillStyle = drawColor;
-            ctx.fillRect(canvas.width - 5, 0, 5, canvas.height);
         }
 
-        // 5. ACTUALIZAR HUD (Suavizado de BPM)
-        // Hacemos que el número de BPM cambie gradualmente, no de golpe
+        // 6. ACTUALIZAR HUD (BPM)
         if (Math.abs(currentState.currentBPM - currentState.targetBPM) > 0.5) {
             currentState.currentBPM += (currentState.targetBPM - currentState.currentBPM) * 0.05;
             hrValueDisplay.innerText = Math.round(currentState.currentBPM);
@@ -323,47 +316,42 @@
              hrValueDisplay.innerText = currentState.targetBPM;
         }
 
-        // Solicitar el siguiente frame de animación
         requestAnimationFrame(draw);
     }
 
-    // --- CONTROLES E INTERACCIÓN ---
+    // --- CONTROLES (Igual que antes) ---
     function setRhythm(rhythm) {
-        // Actualizar botones activos
         buttons.forEach(btn => btn.classList.remove('active'));
         event.target.classList.add('active');
-
         currentState.rhythm = rhythm;
 
-        // Configurar parámetros según el ritmo elegido
         switch(rhythm) {
             case 'sinus':
-                currentState.speed = 3;
+                currentState.speed = 2;
                 currentState.targetBPM = 72;
                 rhythmLabelDisplay.innerText = "RITMO SINUSAL NORMAL";
                 break;
             case 'tachy':
-                currentState.speed = 4.5; // Más rápido horizontalmente
-                currentState.targetBPM = 150; // BPM más altos (afecta la matemática de la onda)
+                currentState.speed = 3.5; 
+                currentState.targetBPM = 150; 
                 rhythmLabelDisplay.innerText = "TAQUICARDIA SINUSAL";
                 break;
             case 'vfib':
-                currentState.speed = 3;
-                currentState.targetBPM = 0; // En FV no hay pulso efectivo
+                currentState.speed = 2;
+                currentState.targetBPM = 0; 
                 rhythmLabelDisplay.innerText = "!! FIB. VENTRICULAR !!";
                 break;
             case 'asystole':
-                currentState.speed = 3;
+                currentState.speed = 2;
                 currentState.targetBPM = 0;
                 rhythmLabelDisplay.innerText = "!! ASISTOLIA !!";
                 break;
         }
     }
 
-    // --- INICIO ---
-    resizeCanvas(); // Ajuste inicial
-    draw(); // Iniciar bucle de renderizado
-
+    // Inicio
+    resizeCanvas();
+    draw();
 </script>
 </body>
 </html>
