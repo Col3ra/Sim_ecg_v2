@@ -3,355 +3,430 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Simulador ECG Futurista v3.0</title>
+    <title>MedSim ECG: Monitor de Pregrado</title>
     <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
 
     <style>
         :root {
-            --ecg-color: #00ff41; /* Verde neón clásico */
-            --alert-color: #ff003c; /* Rojo alerta */
-            --bg-dark: #05080a;
-            --panel-bg: rgba(10, 20, 30, 0.8);
+            --ecg-color: #00ff41;
+            --alert-color: #ff003c;
+            --warn-color: #ffae00;
+            --bg-dark: #0a0a0a;
+            --grid-color: rgba(0, 255, 65, 0.15);
         }
 
         body {
             margin: 0;
-            padding: 20px;
+            padding: 10px;
             background-color: #000;
             color: var(--ecg-color);
             font-family: 'Share Tech Mono', monospace;
             display: flex;
             flex-direction: column;
             align-items: center;
-            min-height: 100vh;
-            box-sizing: border-box;
+            height: 100vh;
+            overflow: hidden; /* Evita scrollbars */
         }
 
-        /* --- Contenedor Principal del Monitor --- */
+        /* --- MONITOR --- */
         #monitor-frame {
             position: relative;
             width: 95%;
-            max-width: 1000px;
-            height: 60vh;
-            min-height: 400px;
+            max-width: 1200px;
+            height: 60vh; /* Altura del monitor */
             background: var(--bg-dark);
-            border: 2px solid var(--ecg-color);
-            box-shadow: 0 0 20px rgba(0, 255, 65, 0.2), inset 0 0 30px rgba(0, 255, 65, 0.1);
+            border: 3px solid #333;
+            border-radius: 15px;
+            box-shadow: 0 0 30px rgba(0, 255, 65, 0.1);
             overflow: hidden;
-            border-radius: 10px;
-            /* Fondo de rejilla técnica usando gradientes CSS */
+            
+            /* Rejilla ECG Realista (Cajas grandes y chicas) */
             background-image: 
-                linear-gradient(rgba(0, 255, 65, 0.1) 1px, transparent 1px),
-                linear-gradient(90deg, rgba(0, 255, 65, 0.1) 1px, transparent 1px);
-            background-size: 50px 50px;
+                linear-gradient(var(--grid-color) 1px, transparent 1px),
+                linear-gradient(90deg, var(--grid-color) 1px, transparent 1px);
+            background-size: 20px 20px; /* Simula 1mm/5mm */
         }
 
-        /* Efecto de escaneo de pantalla CRT antigua */
+        /* Overlay estilo pantalla vieja (Scanlines) */
         #monitor-frame::after {
             content: " ";
-            display: block;
             position: absolute;
-            top: 0;
-            left: 0;
-            bottom: 0;
-            right: 0;
-            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
-            z-index: 2;
-            background-size: 100% 2px, 3px 100%;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.1) 50%);
+            background-size: 100% 4px;
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        /* Canvas */
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* --- HUD (Datos en pantalla) --- */
+        .hud-top-left {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 5;
             pointer-events: none;
         }
 
-        /* El Canvas donde se dibuja la onda */
-        #ecgCanvas {
-            position: absolute;
-            top: 0;
-            left: 0;
-            z-index: 1;
-        }
-
-        /* --- Elementos de la Interfaz (HUD) --- */
-        .hud-overlay {
-            position: absolute;
-            z-index: 3;
-            padding: 20px;
-            pointer-events: none; /* Para que los clicks pasen al canvas si fuera necesario */
-            width: 100%;
-            box-sizing: border-box;
-            display: flex;
-            justify-content: space-between;
-        }
-
-        .vital-sign-box {
-            text-align: right;
-            text-shadow: 0 0 10px var(--ecg-color);
-        }
-
-        .vital-label {
-            font-size: 0.9rem;
-            opacity: 0.8;
-            letter-spacing: 2px;
-        }
-
-        .vital-value {
-            font-size: 4rem;
-            font-weight: bold;
-            line-height: 1;
-        }
-
-        .vital-unit {
+        .rhythm-name {
             font-size: 1.5rem;
-        }
-
-        /* Indicador de modo en la esquina superior izquierda */
-        .mode-indicator {
-            text-transform: uppercase;
-            border: 1px solid var(--ecg-color);
+            background: rgba(0, 20, 0, 0.7);
             padding: 5px 10px;
-            background: rgba(0, 255, 65, 0.1);
-            box-shadow: 0 0 10px rgba(0, 255, 65, 0.2);
+            border-left: 4px solid var(--ecg-color);
         }
 
-        /* --- Controles --- */
-        #controls-container {
-            margin-top: 30px;
-            display: flex;
-            gap: 15px;
-            flex-wrap: wrap;
-            justify-content: center;
+        .hud-top-right {
+            position: absolute;
+            top: 20px;
+            right: 30px;
+            z-index: 5;
+            text-align: right;
+            pointer-events: none;
         }
 
-        .cyber-button {
-            background: transparent;
-            border: 2px solid var(--ecg-color);
+        .bpm-value {
+            font-size: 5rem;
+            line-height: 0.9;
+            font-weight: bold;
+            text-shadow: 0 0 15px var(--ecg-color);
+        }
+
+        .bpm-label {
+            font-size: 1.2rem;
+            opacity: 0.8;
+        }
+
+        /* --- CONTROLES --- */
+        #controls {
+            margin-top: 20px;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 10px;
+            width: 95%;
+            max-width: 1200px;
+        }
+
+        .btn {
+            background: #111;
+            border: 1px solid var(--ecg-color);
             color: var(--ecg-color);
-            padding: 10px 20px;
+            padding: 15px 10px;
             font-family: 'Share Tech Mono', monospace;
-            font-size: 1rem;
+            font-size: 0.9rem;
             cursor: pointer;
             text-transform: uppercase;
-            letter-spacing: 1px;
-            transition: all 0.3s ease;
-            position: relative;
-            overflow: hidden;
-            box-shadow: 0 0 5px rgba(0, 255, 65, 0.2);
+            transition: all 0.2s;
+            border-radius: 4px;
         }
 
-        .cyber-button:hover {
+        .btn:hover {
             background: var(--ecg-color);
-            color: #000;
-            box-shadow: 0 0 20px rgba(0, 255, 65, 0.8);
+            color: black;
+            box-shadow: 0 0 15px var(--ecg-color);
         }
 
-        .cyber-button.active {
+        .btn.active {
             background: var(--ecg-color);
-            color: #000;
-            box-shadow: 0 0 15px rgba(0, 255, 65, 0.5);
+            color: black;
+            font-weight: bold;
+            box-shadow: 0 0 10px var(--ecg-color);
         }
-        
-        /* Botones de patología específicos */
-        .cyber-button.danger:hover, .cyber-button.danger.active {
-            border-color: var(--alert-color);
-            background: var(--alert-color);
-            box-shadow: 0 0 20px rgba(255, 0, 60, 0.8);
-        }
+
+        /* Estilos para botones de alerta */
+        .btn.danger { border-color: var(--alert-color); color: var(--alert-color); }
+        .btn.danger:hover, .btn.danger.active { background: var(--alert-color); color: white; box-shadow: 0 0 15px var(--alert-color); }
+
+        .btn.warn { border-color: var(--warn-color); color: var(--warn-color); }
+        .btn.warn:hover, .btn.warn.active { background: var(--warn-color); color: black; box-shadow: 0 0 15px var(--warn-color); }
+
     </style>
 </head>
 <body>
 
     <div id="monitor-frame">
-        <div class="hud-overlay">
-            <div>
-                <div class="mode-indicator" id="rhythm-label">RITMO SINUSAL NORMAL</div>
-                <div style="margin-top: 10px; font-size: 0.8rem;">DERIVACIÓN II / 25mm/s</div>
-            </div>
-            
-            <div class="vital-sign-box">
-                <div class="vital-label">FRECUENCIA CARDIACA</div>
-                <span class="vital-value" id="hr-value">72</span>
-                <span class="vital-unit">BPM</span>
-            </div>
+        <div class="hud-top-left">
+            <div class="rhythm-name" id="rhythmText">RITMO SINUSAL</div>
+            <div style="font-size: 0.8rem; margin-top:5px; opacity:0.7;">VEL: 25 mm/s | GAN: 10 mm/mV</div>
         </div>
         
+        <div class="hud-top-right">
+            <div class="bpm-value" id="bpmText">72</div>
+            <div class="bpm-label">LPM</div>
+        </div>
+
         <canvas id="ecgCanvas"></canvas>
     </div>
 
-    <div id="controls-container">
-        <button class="cyber-button active" onclick="setRhythm('sinus')">Ritmo Sinusal</button>
-        <button class="cyber-button" onclick="setRhythm('tachy')">Taquicardia</button>
-        <button class="cyber-button danger" onclick="setRhythm('vfib')">Fib. Ventricular</button>
-        <button class="cyber-button danger" onclick="setRhythm('asystole')">Asistolia</button>
+    <div id="controls">
+        <button class="btn active" onclick="setMode('sinus')">NSR (Normal)</button>
+        <button class="btn" onclick="setMode('brady')">Bradicardia</button>
+        <button class="btn" onclick="setMode('tachy')">Taquicardia</button>
+        
+        <button class="btn warn" onclick="setMode('afib')">Fib. Auricular</button>
+        <button class="btn warn" onclick="setMode('flutter')">A. Flutter</button>
+        
+        <button class="btn danger" onclick="setMode('stemi')">IAM (STEMI)</button>
+        <button class="btn danger" onclick="setMode('vtach')">Taqui. Ventric.</button>
+        <button class="btn danger" onclick="setMode('vfib')">Fib. Ventric.</button>
+        <button class="btn danger" onclick="setMode('asystole')">Asistolia</button>
     </div>
 
-
 <script>
-        // --- Configuración Inicial ---
     const canvas = document.getElementById('ecgCanvas');
     const ctx = canvas.getContext('2d');
-    const hrValueDisplay = document.getElementById('hr-value');
-    const rhythmLabelDisplay = document.getElementById('rhythm-label');
-    const buttons = document.querySelectorAll('.cyber-button');
+    
+    // Elementos UI
+    const bpmText = document.getElementById('bpmText');
+    const rhythmText = document.getElementById('rhythmText');
+    const buttons = document.querySelectorAll('.btn');
 
-    function resizeCanvas() {
+    // Estado del Sistema
+    let config = {
+        rhythm: 'sinus',
+        speed: 2,        // Velocidad de dibujo horizontal
+        bpm: 72,         // BPM objetivo
+        currentBpm: 72,  // BPM visual (para transiciones)
+        amplitude: 100,  // Altura base
+        color: '#00ff41' // Color de la línea
+    };
+
+    // Variables de dibujo
+    let x = 0;
+    let time = 0;
+    let baseline = 0;
+
+    // Ajuste de tamaño
+    function resize() {
         canvas.width = canvas.parentElement.clientWidth;
         canvas.height = canvas.parentElement.clientHeight;
         baseline = canvas.height / 2;
     }
-    window.addEventListener('resize', resizeCanvas);
-    
-    // --- Variables del Simulador ---
-    let x = 0; 
-    let baseline = canvas.height / 2;
-    let time = 0; 
-    
-    let currentState = {
-        rhythm: 'sinus', 
-        speed: 2, // Velocidad un poco más lenta para mejor lectura (25mm/s simulado)
-        amplitude: 100,  
-        targetBPM: 72,   
-        currentBPM: 72   
-    };
+    window.addEventListener('resize', resize);
+    resize();
 
-    // --- FUNCIONES MATEMÁTICAS (Igual que antes) ---
-    function waveSinus(t) {
-        let cycleLen = 60 * 60 / currentState.targetBPM; 
-        let cycle = t % cycleLen;
-        let pos = (cycle / cycleLen) * 100; 
+    // ---------------------------------------------------------
+    // MOTOR MATEMÁTICO DE ONDAS (Lo crucial para la medicina)
+    // ---------------------------------------------------------
+
+    // 1. Generador de complejo P-QRS-T Paramétrico
+    function getComplexValue(pos, type) {
         let val = 0;
-        if(pos > 10 && pos < 20) val -= Math.sin((pos-10)/10 * Math.PI) * 0.1; // P
-        else if(pos > 30 && pos < 32) val += 0.1; // Q
-        else if(pos >= 32 && pos < 36) val -= 1.2; // R
-        else if(pos >= 36 && pos < 40) val += 0.2; // S
-        else if(pos > 50 && pos < 75) val -= Math.sin((pos-50)/25 * Math.PI) * 0.25; // T
-        val += (Math.random() - 0.5) * 0.03;
-        return val * currentState.amplitude;
-    }
 
-    function waveVFib(t) {
-        let val = Math.sin(t * 0.1) * 0.3 + Math.sin(t * 0.23) * 0.2 + Math.sin(t * 0.37) * 0.4;
-        val += (Math.random() - 0.5) * 0.2;
-        return val * currentState.amplitude * 0.7; 
-    }
+        if (type === 'normal' || type === 'stemi') {
+            // Onda P (Auricular)
+            if(pos > 10 && pos < 20) val -= Math.sin((pos-10)/10 * Math.PI) * 0.12;
 
-    function waveAsystole(t) {
-        return (Math.random() - 0.5) * 0.05 * currentState.amplitude;
-    }
-
-    function getWaveValue(t) {
-        switch(currentState.rhythm) {
-            case 'sinus': return waveSinus(t);
-            case 'tachy': return waveSinus(t); 
-            case 'vfib':  return waveVFib(t);
-            case 'asystole': return waveAsystole(t);
-            default: return waveSinus(t);
-        }
-    }
-
-    // --- NUEVO BUCLE DE DIBUJO (Lógica Clínica Real) ---
-    function draw() {
+            // QRS (Ventricular)
+            if(pos > 28 && pos < 30) val += 0.1; // Q
+            else if(pos >= 30 && pos < 34) val -= 1.4; // R (Pico)
+            else if(pos >= 34 && pos < 38) val += 0.3; // S
+            
+            // ST-T
+            if (type === 'stemi') {
+                // Elevación patológica del ST (Infarto)
+                if(pos >= 38 && pos < 60) val -= 0.35; 
+                // Onda T fusionada
+                if(pos >= 50 && pos < 75) val -= Math.sin((pos-50)/25 * Math.PI) * 0.3;
+            } else {
+                // Normal
+                if(pos >= 50 && pos < 75) val -= Math.sin((pos-50)/25 * Math.PI) * 0.25; 
+            }
+        } 
         
-        // 1. CONFIGURACIÓN DE ESTILO
+        else if (type === 'afib') {
+            // FA: No hay onda P, línea base temblorosa ("f" waves), QRS irregular
+            // Simulamos el temblor base aquí, el QRS se añade en la lógica principal
+            if(pos >= 30 && pos < 34) val -= 1.3; // R irregular
+            else if(pos >= 34 && pos < 38) val += 0.2; // S
+        }
+        
+        return val;
+    }
+
+    // Función Maestra que calcula Y según el tiempo
+    function calculateSignal(t) {
+        let val = 0;
+        let cycleLen = 3600 / config.bpm; // Frames por latido
+        
+        // -- LÓGICA ESPECÍFICA POR RITMO --
+
+        if (config.rhythm === 'vtach') {
+            // TV: Monorremorfa (Ondas sinusoidales anchas y grandes, sin P ni T)
+            val = Math.sin(t * 0.15) * 1.2; 
+            // Agudizar un poco los picos
+            if(val < -0.8) val *= 1.2; 
+        } 
+        
+        else if (config.rhythm === 'vfib') {
+            // FV: Caos total. Suma de senos desfasados.
+            val = (Math.sin(t * 0.1) + Math.sin(t * 0.17) + Math.cos(t * 0.05)) * 0.4;
+        } 
+        
+        else if (config.rhythm === 'flutter') {
+            // Flutter: Ondas F en "Dientes de sierra" continuas
+            // Fondo de dientes:
+            val = Math.sin(t * 0.25) * 0.2; 
+            // QRS superpuesto cada cierto tiempo (bloqueo fijo)
+            let flutterCycle = t % (cycleLen * 1.5); // Un QRS cada 1.5 ciclos de sierra
+            let fPos = (flutterCycle / (cycleLen * 1.5)) * 100;
+            
+            if(fPos > 40 && fPos < 45) val -= 1.0; // R spike
+        } 
+        
+        else if (config.rhythm === 'afib') {
+            // FA: Ruido basal fuerte (ondas f)
+            val = (Math.random() - 0.5) * 0.15;
+            
+            // Truco para QRS Irregular: usamos un ruido Perlin simplificado o Math.sin de baja frecuencia
+            // para modular cuándo aparece el QRS.
+            // Para simplificar en este código único: Usamos un ciclo normal pero añadimos "Jitter" al tiempo
+            // Simulación visual aproximada:
+            let jitteryTime = t + Math.sin(t * 0.02) * 50; 
+            let cycle = jitteryTime % cycleLen;
+            let pos = (cycle / cycleLen) * 100;
+            
+            val += getComplexValue(pos, 'afib');
+        }
+        
+        else if (config.rhythm === 'asystole') {
+            val = 0;
+        }
+
+        else {
+            // Ritmos Sinusales (Normal, Bradi, Taqui, STEMI)
+            let cycle = t % cycleLen;
+            let pos = (cycle / cycleLen) * 100;
+            
+            // Tipo de complejo
+            let type = (config.rhythm === 'stemi') ? 'stemi' : 'normal';
+            val = getComplexValue(pos, type);
+        }
+
+        // Añadir ruido eléctrico/muscular basal siempre (realismo)
+        val += (Math.random() - 0.5) * 0.04;
+
+        return val * config.amplitude;
+    }
+
+    // ---------------------------------------------------------
+    // BUCLE DE DIBUJO (SCAN BAR METHOD)
+    // ---------------------------------------------------------
+    function draw() {
+        // Configuración de línea
         ctx.lineWidth = 3;
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
-        
-        let drawColor = getComputedStyle(document.documentElement).getPropertyValue('--ecg-color').trim();
-        if(currentState.rhythm === 'vfib' || currentState.rhythm === 'asystole') {
-             drawColor = getComputedStyle(document.documentElement).getPropertyValue('--alert-color').trim();
-        }
-        
-        ctx.strokeStyle = drawColor;
-        ctx.shadowBlur = 10; 
-        ctx.shadowColor = drawColor;
+        ctx.shadowBlur = 12;
+        ctx.shadowColor = config.color;
+        ctx.strokeStyle = config.color;
 
-        // 2. EL "BORRADOR" (Scan Bar)
-        // En lugar de borrar todo, borramos un rectángulo pequeño ADELANTE del punto actual.
-        // Esto elimina el trazo de la vuelta anterior justo antes de reescribirlo.
-        // Al usar clearRect, dejamos ver la rejilla CSS de fondo.
-        
-        const eraserWidth = 30; // Ancho del espacio vacío que viaja delante de la onda
-        const eraserHeight = canvas.height;
-        
-        // Borramos una franja vertical
-        ctx.clearRect(x, 0, eraserWidth, eraserHeight);
+        // 1. Borrado Inteligente (Barra de escáner)
+        // Borramos 20px por delante del puntero para limpiar lo viejo
+        ctx.clearRect(x, 0, 30, canvas.height);
 
-        // 3. DIBUJAR EL SEGMENTO
+        // 2. Dibujar Segmento
         ctx.beginPath();
         
-        // Punto anterior (si es el inicio de pantalla, movemos sin dibujar para evitar líneas cruzadas)
-        let prevY = baseline + getWaveValue(time);
-        if (x === 0) {
-            ctx.moveTo(x, prevY);
-        } else {
-            // Necesitamos recordar la Y anterior para que la línea sea continua
-            // Retrocedemos un paso en el tiempo para saber dónde estábamos
-            ctx.moveTo(x - currentState.speed, baseline + getWaveValue(time - 1)); 
-        }
-        
-        // Punto actual
-        let nextY = baseline + getWaveValue(time);
-        ctx.lineTo(x, nextY);
-        ctx.stroke();
-        
-        // Dibujar la "cabeza" brillante (punto blanco en la punta, opcional pero queda bien)
-        // Esto ayuda al ojo a seguir el punto de escritura
-        ctx.fillStyle = '#fff';
-        ctx.shadowBlur = 15;
-        ctx.shadowColor = '#fff';
-        ctx.fillRect(x, nextY - 2, 4, 4); // Pequeño punto brillante
+        // Truco de continuidad: si x > 0, empezamos desde el punto anterior calculado
+        // Re-calculamos el punto previo para evitar gaps
+        let prevY = baseline + calculateSignal(time - 1);
+        if(x === 0) ctx.moveTo(x, prevY);
+        else ctx.moveTo(x - config.speed, prevY);
 
-        // 4. AVANZAR
-        x += currentState.speed;
+        let curY = baseline + calculateSignal(time);
+        ctx.lineTo(x, curY);
+        ctx.stroke();
+
+        // 3. "Cabeza" del puntero (punto brillante)
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(x, curY - 2, 4, 4);
+
+        // 4. Gestión de tiempo y espacio
+        x += config.speed;
         time++;
 
-        // 5. BARRIDO (Wrap around)
+        // Vuelta al principio
         if (x > canvas.width) {
             x = 0;
         }
 
-        // 6. ACTUALIZAR HUD (BPM)
-        if (Math.abs(currentState.currentBPM - currentState.targetBPM) > 0.5) {
-            currentState.currentBPM += (currentState.targetBPM - currentState.currentBPM) * 0.05;
-            hrValueDisplay.innerText = Math.round(currentState.currentBPM);
+        // 5. Suavizado de BPM en pantalla
+        if(config.rhythm === 'vfib' || config.rhythm === 'vtach' || config.rhythm === 'asystole') {
+            // En paros cardiacos el monitor a veces muestra ??? o 0
+            bpmText.innerText = (config.rhythm === 'vtach') ? "160" : "0";
+            if(config.rhythm === 'vtach') bpmText.style.color = 'var(--alert-color)';
         } else {
-             hrValueDisplay.innerText = currentState.targetBPM;
+            // Interpolación suave del número
+            let diff = config.bpm - config.currentBpm;
+            if(Math.abs(diff) > 0.5) config.currentBpm += diff * 0.05;
+            else config.currentBpm = config.bpm;
+            bpmText.innerText = Math.round(config.currentBpm);
+            bpmText.style.color = 'var(--ecg-color)';
         }
 
         requestAnimationFrame(draw);
     }
 
-    // --- CONTROLES (Igual que antes) ---
-    function setRhythm(rhythm) {
-        buttons.forEach(btn => btn.classList.remove('active'));
+    // ---------------------------------------------------------
+    // CONTROLADOR DE MODOS
+    // ---------------------------------------------------------
+    function setMode(mode) {
+        // Gestión visual de botones
+        buttons.forEach(b => b.classList.remove('active'));
         event.target.classList.add('active');
-        currentState.rhythm = rhythm;
 
-        switch(rhythm) {
+        config.rhythm = mode;
+
+        // Parámetros Clínicos
+        switch(mode) {
             case 'sinus':
-                currentState.speed = 2;
-                currentState.targetBPM = 72;
-                rhythmLabelDisplay.innerText = "RITMO SINUSAL NORMAL";
+                config.bpm = 75; config.speed = 2; config.color = '#00ff41';
+                rhythmText.innerText = "RITMO SINUSAL NORMAL";
+                break;
+            case 'brady':
+                config.bpm = 45; config.speed = 1.5; config.color = '#00ff41';
+                rhythmText.innerText = "BRADICARDIA SINUSAL";
                 break;
             case 'tachy':
-                currentState.speed = 3.5; 
-                currentState.targetBPM = 150; 
-                rhythmLabelDisplay.innerText = "TAQUICARDIA SINUSAL";
+                config.bpm = 130; config.speed = 3; config.color = '#00ff41';
+                rhythmText.innerText = "TAQUICARDIA SINUSAL";
+                break;
+            case 'afib':
+                config.bpm = 110; config.speed = 2.5; config.color = '#ffae00'; // Warning color
+                rhythmText.innerText = "FIBRILACIÓN AURICULAR";
+                break;
+            case 'flutter':
+                config.bpm = 115; config.speed = 2.5; config.color = '#ffae00';
+                rhythmText.innerText = "FLUTTER AURICULAR (2:1)";
+                break;
+            case 'stemi':
+                config.bpm = 90; config.speed = 2; config.color = '#ff003c'; // Danger color
+                rhythmText.innerText = "IAM - ELEVACIÓN ST (ANTERIOR)";
+                break;
+            case 'vtach':
+                config.bpm = 160; config.speed = 3.5; config.color = '#ff003c';
+                rhythmText.innerText = "TAQUICARDIA VENTRICULAR";
                 break;
             case 'vfib':
-                currentState.speed = 2;
-                currentState.targetBPM = 0; 
-                rhythmLabelDisplay.innerText = "!! FIB. VENTRICULAR !!";
+                config.bpm = 0; config.speed = 2; config.color = '#ff003c';
+                rhythmText.innerText = "!!! FIB. VENTRICULAR !!!";
                 break;
             case 'asystole':
-                currentState.speed = 2;
-                currentState.targetBPM = 0;
-                rhythmLabelDisplay.innerText = "!! ASISTOLIA !!";
+                config.bpm = 0; config.speed = 1.5; config.color = '#ff003c';
+                rhythmText.innerText = "!!! ASISTOLIA !!!";
                 break;
         }
     }
 
-    // Inicio
-    resizeCanvas();
+    // Iniciar
     draw();
+
 </script>
 </body>
 </html>
