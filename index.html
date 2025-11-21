@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simulador ECG Futurista v3.0</title>
+    <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
+
+    <style>
+        :root {
+            --ecg-color: #00ff41; /* Verde neón clásico */
+            --alert-color: #ff003c; /* Rojo alerta */
+            --bg-dark: #05080a;
+            --panel-bg: rgba(10, 20, 30, 0.8);
+        }
+
+        body {
+            margin: 0;
+            padding: 20px;
+            background-color: #000;
+            color: var(--ecg-color);
+            font-family: 'Share Tech Mono', monospace;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            box-sizing: border-box;
+        }
+
+        /* --- Contenedor Principal del Monitor --- */
+        #monitor-frame {
+            position: relative;
+            width: 95%;
+            max-width: 1000px;
+            height: 60vh;
+            min-height: 400px;
+            background: var(--bg-dark);
+            border: 2px solid var(--ecg-color);
+            box-shadow: 0 0 20px rgba(0, 255, 65, 0.2), inset 0 0 30px rgba(0, 255, 65, 0.1);
+            overflow: hidden;
+            border-radius: 10px;
+            /* Fondo de rejilla técnica usando gradientes CSS */
+            background-image: 
+                linear-gradient(rgba(0, 255, 65, 0.1) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0, 255, 65, 0.1) 1px, transparent 1px);
+            background-size: 50px 50px;
+        }
+
+        /* Efecto de escaneo de pantalla CRT antigua */
+        #monitor-frame::after {
+            content: " ";
+            display: block;
+            position: absolute;
+            top: 0;
+            left: 0;
+            bottom: 0;
+            right: 0;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+            z-index: 2;
+            background-size: 100% 2px, 3px 100%;
+            pointer-events: none;
+        }
+
+        /* El Canvas donde se dibuja la onda */
+        #ecgCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 1;
+        }
+
+        /* --- Elementos de la Interfaz (HUD) --- */
+        .hud-overlay {
+            position: absolute;
+            z-index: 3;
+            padding: 20px;
+            pointer-events: none; /* Para que los clicks pasen al canvas si fuera necesario */
+            width: 100%;
+            box-sizing: border-box;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .vital-sign-box {
+            text-align: right;
+            text-shadow: 0 0 10px var(--ecg-color);
+        }
+
+        .vital-label {
+            font-size: 0.9rem;
+            opacity: 0.8;
+            letter-spacing: 2px;
+        }
+
+        .vital-value {
+            font-size: 4rem;
+            font-weight: bold;
+            line-height: 1;
+        }
+
+        .vital-unit {
+            font-size: 1.5rem;
+        }
+
+        /* Indicador de modo en la esquina superior izquierda */
+        .mode-indicator {
+            text-transform: uppercase;
+            border: 1px solid var(--ecg-color);
+            padding: 5px 10px;
+            background: rgba(0, 255, 65, 0.1);
+            box-shadow: 0 0 10px rgba(0, 255, 65, 0.2);
+        }
+
+        /* --- Controles --- */
+        #controls-container {
+            margin-top: 30px;
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .cyber-button {
+            background: transparent;
+            border: 2px solid var(--ecg-color);
+            color: var(--ecg-color);
+            padding: 10px 20px;
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 1rem;
+            cursor: pointer;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 0 5px rgba(0, 255, 65, 0.2);
+        }
+
+        .cyber-button:hover {
+            background: var(--ecg-color);
+            color: #000;
+            box-shadow: 0 0 20px rgba(0, 255, 65, 0.8);
+        }
+
+        .cyber-button.active {
+            background: var(--ecg-color);
+            color: #000;
+            box-shadow: 0 0 15px rgba(0, 255, 65, 0.5);
+        }
+        
+        /* Botones de patología específicos */
+        .cyber-button.danger:hover, .cyber-button.danger.active {
+            border-color: var(--alert-color);
+            background: var(--alert-color);
+            box-shadow: 0 0 20px rgba(255, 0, 60, 0.8);
+        }
+    </style>
+</head>
+<body>
+
+    <div id="monitor-frame">
+        <div class="hud-overlay">
+            <div>
+                <div class="mode-indicator" id="rhythm-label">RITMO SINUSAL NORMAL</div>
+                <div style="margin-top: 10px; font-size: 0.8rem;">DERIVACIÓN II / 25mm/s</div>
+            </div>
+            
+            <div class="vital-sign-box">
+                <div class="vital-label">FRECUENCIA CARDIACA</div>
+                <span class="vital-value" id="hr-value">72</span>
+                <span class="vital-unit">BPM</span>
+            </div>
+        </div>
+        
+        <canvas id="ecgCanvas"></canvas>
+    </div>
+
+    <div id="controls-container">
+        <button class="cyber-button active" onclick="setRhythm('sinus')">Ritmo Sinusal</button>
+        <button class="cyber-button" onclick="setRhythm('tachy')">Taquicardia</button>
+        <button class="cyber-button danger" onclick="setRhythm('vfib')">Fib. Ventricular</button>
+        <button class="cyber-button danger" onclick="setRhythm('asystole')">Asistolia</button>
+    </div>
+
+
+<script>
+    // --- Configuración Inicial ---
+    const canvas = document.getElementById('ecgCanvas');
+    const ctx = canvas.getContext('2d');
+    const hrValueDisplay = document.getElementById('hr-value');
+    const rhythmLabelDisplay = document.getElementById('rhythm-label');
+    const buttons = document.querySelectorAll('.cyber-button');
+
+    // Ajustamos el canvas al tamaño real de su contenedor CSS
+    function resizeCanvas() {
+        canvas.width = canvas.parentElement.clientWidth;
+        canvas.height = canvas.parentElement.clientHeight;
+        baseline = canvas.height / 2;
+    }
+    window.addEventListener('resize', resizeCanvas);
+    
+    // --- Variables del Simulador ---
+    let x = 0; // Posición horizontal del cursor de dibujo
+    let baseline = canvas.height / 2;
+    let time = 0; // Tiempo global
+    
+    // Estado actual del simulador
+    let currentState = {
+        rhythm: 'sinus', // 'sinus', 'tachy', 'vfib', 'asystole'
+        speed: 3,        // Velocidad de barrido horizontal
+        amplitude: 120,  // Altura de las ondas
+        targetBPM: 72,   // BPM objetivo para mostrar en pantalla
+        currentBPM: 72   // BPM actual (para transiciones suaves)
+    };
+
+
+    // --- MOTOR DE MATEMÁTICAS DE ONDA ---
+
+    // Función 1: Ritmo Sinusal Normal (Complejo PQRST)
+    function waveSinus(t) {
+        // Ajustamos el ciclo para que coincida aprox con los BPM
+        let cycleLen = 60 * 60 / currentState.targetBPM; // frames por latido
+        let cycle = t % cycleLen;
+        
+        // Escalamos el ciclo a un rango 0-100 para facilitar la matemática
+        let pos = (cycle / cycleLen) * 100; 
+
+        let val = 0;
+        // Onda P
+        if(pos > 10 && pos < 20) val -= Math.sin((pos-10)/10 * Math.PI) * 0.1;
+        // Segmento PR (plano)
+        // Complejo QRS
+        else if(pos > 30 && pos < 32) val += 0.1; // Q
+        else if(pos >= 32 && pos < 36) val -= 1.2; // R (Pico alto)
+        else if(pos >= 36 && pos < 40) val += 0.2; // S
+        // Segmento ST (plano)
+        // Onda T
+        else if(pos > 50 && pos < 75) val -= Math.sin((pos-50)/25 * Math.PI) * 0.25;
+
+        // Ruido basal ligero
+        val += (Math.random() - 0.5) * 0.03;
+        return val * currentState.amplitude;
+    }
+
+    // Función 2: Fibrilación Ventricular (Caos)
+    function waveVFib(t) {
+        // Suma de varias ondas sinusoidales de diferente frecuencia y amplitud
+        let val = Math.sin(t * 0.1) * 0.3 + 
+                  Math.sin(t * 0.23) * 0.2 + 
+                  Math.sin(t * 0.37) * 0.4;
+        // Ruido fuerte
+        val += (Math.random() - 0.5) * 0.2;
+        return val * currentState.amplitude * 0.7; // Amplitud general un poco más baja
+    }
+
+    // Función 3: Asistolia (Línea casi plana)
+    function waveAsystole(t) {
+        // Solo ruido basal muy ligero
+        let val = (Math.random() - 0.5) * 0.05;
+        return val * currentState.amplitude;
+    }
+
+    // Selector de función de onda
+    function getWaveValue(t) {
+        switch(currentState.rhythm) {
+            case 'sinus': return waveSinus(t);
+            case 'tachy': return waveSinus(t); // Usa la misma forma pero más rápido
+            case 'vfib':  return waveVFib(t);
+            case 'asystole': return waveAsystole(t);
+            default: return waveSinus(t);
+        }
+    }
+
+    // --- BUCLE PRINCIPAL DE DIBUJO (Render Loop) ---
+    function draw() {
+        // 1. EFECTO "TRAIL" (Rastro de fósforo)
+        // En lugar de borrar con clearRect, dibujamos un rectángulo negro semitransparente sobre todo.
+        // Esto hace que lo dibujado anteriormente se desvanezca lentamente.
+        ctx.fillStyle = 'rgba(5, 8, 10, 0.15)'; // El último valor (alpha) controla la longitud del rastro. Menor = rastro más largo.
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // 2. CONFIGURACIÓN DE LA LÍNEA (Estilo Neon)
+        ctx.lineWidth = 3;
+        ctx.lineCap = 'round';
+        // Color base
+        let drawColor = getComputedStyle(document.documentElement).getPropertyValue('--ecg-color').trim();
+        // Si es una patología grave, cambiamos a rojo
+        if(currentState.rhythm === 'vfib' || currentState.rhythm === 'asystole') {
+             drawColor = getComputedStyle(document.documentElement).getPropertyValue('--alert-color').trim();
+        }
+        ctx.strokeStyle = drawColor;
+        // Efecto Glow (Resplandor) importante para el look futurista
+        ctx.shadowBlur = 15; 
+        ctx.shadowColor = drawColor;
+
+        // 3. DIBUJAR EL SEGMENTO
+        ctx.beginPath();
+        // Empezamos donde terminó el frame anterior
+        ctx.moveTo(x, baseline + getWaveValue(time));
+        
+        // Avanzamos tiempo y posición
+        x += currentState.speed;
+        time++;
+        
+        // Dibujamos hasta la nueva posición
+        ctx.lineTo(x, baseline + getWaveValue(time));
+        ctx.stroke();
+
+        // 4. BARRIDO (Volver al inicio al llegar al final)
+        if (x > canvas.width) {
+            x = 0;
+            // Un pequeño "flash" verde vertical para simular el refresco del monitor
+            ctx.fillStyle = drawColor;
+            ctx.fillRect(canvas.width - 5, 0, 5, canvas.height);
+        }
+
+        // 5. ACTUALIZAR HUD (Suavizado de BPM)
+        // Hacemos que el número de BPM cambie gradualmente, no de golpe
+        if (Math.abs(currentState.currentBPM - currentState.targetBPM) > 0.5) {
+            currentState.currentBPM += (currentState.targetBPM - currentState.currentBPM) * 0.05;
+            hrValueDisplay.innerText = Math.round(currentState.currentBPM);
+        } else {
+             hrValueDisplay.innerText = currentState.targetBPM;
+        }
+
+        // Solicitar el siguiente frame de animación
+        requestAnimationFrame(draw);
+    }
+
+    // --- CONTROLES E INTERACCIÓN ---
+    function setRhythm(rhythm) {
+        // Actualizar botones activos
+        buttons.forEach(btn => btn.classList.remove('active'));
+        event.target.classList.add('active');
+
+        currentState.rhythm = rhythm;
+
+        // Configurar parámetros según el ritmo elegido
+        switch(rhythm) {
+            case 'sinus':
+                currentState.speed = 3;
+                currentState.targetBPM = 72;
+                rhythmLabelDisplay.innerText = "RITMO SINUSAL NORMAL";
+                break;
+            case 'tachy':
+                currentState.speed = 4.5; // Más rápido horizontalmente
+                currentState.targetBPM = 150; // BPM más altos (afecta la matemática de la onda)
+                rhythmLabelDisplay.innerText = "TAQUICARDIA SINUSAL";
+                break;
+            case 'vfib':
+                currentState.speed = 3;
+                currentState.targetBPM = 0; // En FV no hay pulso efectivo
+                rhythmLabelDisplay.innerText = "!! FIB. VENTRICULAR !!";
+                break;
+            case 'asystole':
+                currentState.speed = 3;
+                currentState.targetBPM = 0;
+                rhythmLabelDisplay.innerText = "!! ASISTOLIA !!";
+                break;
+        }
+    }
+
+    // --- INICIO ---
+    resizeCanvas(); // Ajuste inicial
+    draw(); // Iniciar bucle de renderizado
+
+</script>
+</body>
+</html>
